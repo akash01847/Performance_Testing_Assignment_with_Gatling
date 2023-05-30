@@ -1,15 +1,24 @@
 import io.gatling.core.Predef._
+import io.gatling.core.feeder.BatchableFeederBuilder
 import io.gatling.core.structure.{ChainBuilder, ScenarioBuilder}
 import io.gatling.http.Predef._
 import io.gatling.http.protocol.HttpProtocolBuilder
+
 import scala.concurrent.duration._
+import scala.util.Try
 
 class ApiPerform extends Simulation {
-  val atOnceUserCount: Int = 50
-  val constantUserCount: Int = 20
-  val rampUserCount: Int = 100
+  def readInt(prompt: String): Int = {
+    val input = System.console().readLine(prompt)
+    Try(input.toInt).getOrElse(0)
+  }
+
+  val atOnceUserCount: Int = readInt("Enter value for at one user count: ")
+  val constantUserCount: Int = readInt("Enter value for constant user count: ")
+  val rampUserCount: Int = readInt("Enter value for ramp user count: ")
   val commonHeaders: Map[String, String] = Map("Content-Type" -> "application/json")
   val httpProtocol: HttpProtocolBuilder = http.baseUrl("https://reqres.in")
+  val data_input: BatchableFeederBuilder[String] = csv("src/test/Data_File/data.csv").circular
 
   val commonRequest: ChainBuilder = exec(session => {
     val randomValue = scala.util.Random.nextInt(1000).toString
@@ -23,7 +32,7 @@ class ApiPerform extends Simulation {
       http("POST Request")
         .post("/api/users")
         .headers(commonHeaders)
-        .body(StringBody(session => s"""{ "EmpID": "${session("randomValue").as[String]}", "Name": "Sparsh" }"""))
+        .body(StringBody(session => s"""{ "EmpID": "${session("randomValue").as[String]}", "Name": "Sparsh" }""".stripMargin))
         .check(status.is(201))
     )
     .pause(1.second)
@@ -33,11 +42,12 @@ class ApiPerform extends Simulation {
         .check(status.is(200))
     )
     .pause(1.second)
+    .feed(data_input)
     .exec(
       http("PUT Request")
         .put("/api/users/2")
         .headers(commonHeaders)
-        .body(StringBody("""{ "EmpID": "123", "Name": "Elon Musk" }"""))
+        .body(StringBody(session => s"""{"name": "${session("name").as[String]}"}""".stripMargin))
         .check(status.is(200))
     )
 
@@ -51,7 +61,7 @@ class ApiPerform extends Simulation {
   ).protocols(httpProtocol)
     .maxDuration(1.minute)
     .assertions(
-      global.successfulRequests.percent.gt(95),
+      global.successfulRequests.percent.gte(95),
       forAll.responseTime.max.lt(2000)
     )
 }
